@@ -7,6 +7,7 @@
 
 App::App(int& argc, char* argv[]) : QApplication(argc, argv), window(new Window())
 {
+    connect(window, &Window::closed, this, &QCoreApplication::quit);
     if (argc > 1) {
         const auto args = QCoreApplication::arguments();
         QString filename = args.at(1);
@@ -15,7 +16,7 @@ App::App(int& argc, char* argv[]) : QApplication(argc, argv), window(new Window(
         }
         window->load_stl(filename);
     } else {
-        window->load_stl(":gl/sphere.stl");
+        // Start empty until a file or folder is opened.
     }
     window->show();
 }

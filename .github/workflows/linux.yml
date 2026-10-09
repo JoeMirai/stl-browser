@@ -1,45 +1,17 @@
-name: Build
-
-on:
-    push:
-        branches: [main, master]
-    pull_request:
-        branches: [main, master]
-
+name: Linux build and tests
+on: [push, pull_request]
 jobs:
-    build:
-        runs-on: ubuntu-latest
-        strategy:
-            matrix:
-                compiler: [gcc, clang]
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
-
-            - name: Install dependencies
-              run: |
-                sudo apt-get update
-                sudo apt-get install -y qt5-qmake qtbase5-dev build-essential clang clang-format
-
-            - name: Set compiler
-              run: |
-                if [ "${{ matrix.compiler }}" = "clang" ]; then
-                    export CC=clang
-                    export CXX=clang++
-                else
-                    export CC=gcc
-                    export CXX=g++
-                fi
-                echo "CC=$CC" >> $GITHUB_ENV
-                echo "CXX=$CXX" >> $GITHUB_ENV
-
-            - name: Build 
-              run: |
-                cmake -S . -B build -DFSTL_CHECK_FORMAT=ON
-                cmake --build build --target fstl --config Release -- -j$(nproc)
-            
-            - name: Check format
-              run: |
-                # Print the version for troubleshooting purposes
-                clang-format --version
-                cmake --build build --target check-format
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake qtbase5-dev libqt5opengl5-dev libgl-dev xvfb
+      - name: Build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j2
+      - name: Tests with software OpenGL
+        run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ctest --test-dir build --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stl-browser-linux-x86_64
+          path: build/stl-browser

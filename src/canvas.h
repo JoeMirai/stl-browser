@@ -31,6 +31,8 @@ public:
     void common_view_change(enum ViewPoint c);
     void setResetTransformOnLoad(bool d);
 
+    void clearMesh();
+    void setAppearance(QColor model, QColor background, bool classicBackground);
     QColor getAmbientColor();
     void setAmbientColor(QColor c);
     double getAmbientFactor();
@@ -77,12 +79,15 @@ private:
     QPointF changeMouseCoordinates(QPoint p);
     void calcArcballTransform(QPointF p1, QPointF p2);
 
-    QOpenGLShader* mesh_vertshader;
+    QOpenGLShader* mesh_vertshader = nullptr;
     QOpenGLShaderProgram mesh_shader;
     QOpenGLShaderProgram mesh_wireframe_shader;
     QOpenGLShaderProgram mesh_surfaceangle_shader;
     QOpenGLShaderProgram mesh_meshlight_shader;
 
+    QColor modelColor = Qt::white;
+    QColor backgroundColor = QColor("#173b46");
+    bool useClassicBackground = true;
     QColor ambientColor;
     QColor directiveColor;
     float ambientFactor;
@@ -103,19 +108,19 @@ private:
     const static QString CURRENT_LIGHT_DIRECTION;
 
     GLMesh* mesh;
-    Backdrop* backdrop;
-    Axis* axis;
+    Backdrop* backdrop = nullptr;
+    Axis* axis = nullptr;
 
     QVector3D center, default_center;
-    float scale, default_scale;
+    float scale, default_scale = 1;
     float zoom;
     QMatrix4x4 currentTransform;
 
-    float perspective;
-    enum DrawMode drawMode;
-    bool drawAxes;
-    bool invertZoom;
-    bool resetTransformOnLoad;
+    float perspective = P_PERSPECTIVE;
+    enum DrawMode drawMode = shaded;
+    bool drawAxes = false;
+    bool invertZoom = false;
+    bool resetTransformOnLoad = true;
     Q_PROPERTY(float perspective MEMBER perspective WRITE set_perspective);
     QPropertyAnimation anim;
 

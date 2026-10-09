@@ -1,194 +1,28 @@
-#### Fast .stl viewer #####
-# Original Project Author: Matt Keeter Copyright 2014-2024
-# Author: Paul Tsouchlos Copyright 2017-2024
-
-cmake_minimum_required(VERSION 3.10)
-
-project(fstl)
-
-# Setting -std=c++14
-set(CMAKE_CXX_STANDARD 14)
-set(CXX_STANDARD_REQUIRED ON)
-
-option(FSTL_CHECK_FORMAT "Check source code formatting with clang-format" OFF)
-if(FSTL_CHECK_FORMAT)
-    find_program(CLANG_FORMAT_EXE NAMES clang-format)
-    if(NOT CLANG_FORMAT_EXE)
-        message(FATAL_ERROR "Could not find clang-format executable!")
-    endif()
-
-    file(GLOB_RECURSE ALL_SOURCE_FILES CONFIGURE_DEPENDS
-        src/*.h
-        src/*.cpp
-        qt/*.h
-        qt/*.cpp
-        gl/*.h
-        gl/*.cpp
-        exe/*.h
-        exe/*.cpp
-    )
-
-    add_custom_target(check-format
-        COMMAND ${CLANG_FORMAT_EXE}
-            --Werror
-            --style=file
-            --dry-run
-            ${ALL_SOURCE_FILES}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMENT "Checking source code formatting"
-        VERBATIM)
-    add_custom_target(fix-format
-        COMMAND ${CLANG_FORMAT_EXE}
-            --style=file
-            -i
-            ${ALL_SOURCE_FILES}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMENT "Fixing source code formatting"
-        VERBATIM)
+cmake_minimum_required(VERSION 3.16)
+project(stl-browser VERSION 0.1.0 LANGUAGES CXX)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  message(FATAL_ERROR "STL Browser supports Linux only")
 endif()
-
-# Set the version number
-set (FSTL_VERSION_MAJOR "0")
-set (FSTL_VERSION_MINOR "11")
-set (FSTL_VERSION_PATCH "1")
-set (PROJECT_VERSION "${FSTL_VERSION_MAJOR}.${FSTL_VERSION_MINOR}.${FSTL_VERSION_PATCH}")
-
-message(STATUS "Version: ${PROJECT_VERSION}")
-
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_AUTOUIC ON)
-
-#set project sources
-set(Project_Sources src/app.cpp
-src/backdrop.cpp
-src/axis.cpp
-src/canvas.cpp
-src/glmesh.cpp
-src/loader.cpp
-src/main.cpp
-src/mesh.cpp
-src/window.cpp
-src/shaderlightprefs.cpp)
-
-#set project headers. 
-set(Project_Headers src/app.h
-src/backdrop.h
-src/axis.h
-src/canvas.h
-src/glmesh.h
-src/loader.h
-src/mesh.h
-src/window.h
-src/shaderlightprefs.h)
-
-#set project resources and icon resource
-set(Project_Resources qt/qt.qrc gl/gl.qrc)
-set(Icon_Resource exe/fstl.rc)
-
-#set Policy CMP0072 FindOpenGL behavior
-set(OpenGL_GL_PREFERENCE GLVND)
-
-#find required packages. 
-find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets OpenGL)
+find_package(Qt5 5.12 REQUIRED COMPONENTS Core Gui Widgets OpenGL Test)
+set(OpenGL_GL_PREFERENCE LEGACY)
 find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
-
-#add resources to RCC
-qt5_add_resources(Project_Resources_RCC ${Project_Resources})
-
-#tell CMake AUTOGEN to skip autogen on the generated qrc files
-set_property(SOURCE ${Project_Resources_RCC} PROPERTY SKIP_AUTOGEN ON)
-
-#include opengl files. 
-include_directories(${QT_QTOPENGL_INCLUDE_DIR} ${OPENGL_INCLUDE_DIR} )
-
-if(WIN32)
-  add_executable(fstl WIN32 ${Project_Sources} ${Project_Headers} ${Project_Resources_RCC} ${Icon_Resource})
-  set(Fstl_LINK_FLAGS ${CMAKE_CURRENT_SOURCE_DIR}/${Icon_Resource})
-  set_target_properties(fstl PROPERTIES LINK_FLAGS ${Fstl_LINK_FLAGS})
-elseif(APPLE)
-  add_executable(fstl MACOSX_BUNDLE ${Project_Sources} ${Project_Headers} ${Project_Resources_RCC} ${Icon_Resource})
-else()
-  add_executable(fstl ${Project_Sources} ${Project_Headers} ${Project_Resources_RCC} ${Icon_Resource})
-endif(WIN32)
-
-target_link_libraries(fstl Qt5::Widgets Qt5::Core Qt5::Gui Qt5::OpenGL ${OPENGL_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
-
-# Add version definitions to use within the code. 
-target_compile_definitions(fstl PRIVATE -DFSTL_VERSION="${PROJECT_VERSION}")
-
-#installer information that is platform independent
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast .stl file viewer.")
-set(CPACK_PACKAGE_VERSION_MAJOR ${FSTL_VERSION_MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${FSTL_VERSION_MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${FSTL_VERSION_PATCH})
-
-if(WIN32)
-
-    set(QT_USE_QTMAIN true)
-    
-    if(MSVC)
-        set_source_files_properties(fstl PROPERTIES LINKER_LANGUAGE "CXX")
-        set_target_properties(fstl PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS")
-
-        install(TARGETS fstl DESTINATION bin COMPONENT all)
-        
-        install(FILES
-            $<TARGET_FILE:Qt5::Gui_EGL>
-            $<TARGET_FILE:Qt5::Gui_GLESv2>
-            $<TARGET_FILE:Qt5::Core>
-            $<TARGET_FILE:Qt5::Gui> 
-            $<TARGET_FILE:Qt5::OpenGL>
-            $<TARGET_FILE:Qt5::Widgets>
-            DESTINATION bin COMPONENT all)
-        
-        #install file in the platforms directory.
-        install (FILES
-            ${Qt5Core_DIR}/../../../plugins/platforms/qwindows.dll
-            DESTINATION bin/platforms COMPONENT all
-        )
-
-        #custom commands based on: https://gist.github.com/Rod-Persky/e6b93e9ee31f9516261b
-        add_custom_command(TARGET fstl POST_BUILD 
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt5::Core>       $<TARGET_FILE_DIR:${PROJECT_NAME}>
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt5::Gui>        $<TARGET_FILE_DIR:${PROJECT_NAME}>
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt5::Widgets>    $<TARGET_FILE_DIR:${PROJECT_NAME}>
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt5::OpenGL>     $<TARGET_FILE_DIR:${PROJECT_NAME}>
-        )	
-    endif(MSVC)
-
-    # windows specific installer generation information
-    set(CPACK_GENERATOR NSIS)
-    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)
-    set(CPACK_NSIS_MODIFY_PATH ON)
-    set(CPACK_NSIS_MUI_FINISHPAGE_RUN ${PROJECT_NAME})
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "${PROJECT_NAME}")
-    set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\\\fstl.exe")
-    set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/fstl-app/fstl")
-    set(CPACK_NSIS_DISPLAY_NAME "fstl ${FSTL_VERSION}")
-    set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/exe/fstl.ico")
-    set(CPACK_NSIS_MUI_UNIICON  "${CMAKE_CURRENT_SOURCE_DIR}/exe/fstl.ico")
-    set(CPACK_NSIS_CREATE_ICONS_EXTRA
-        "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\fstl.lnk' '$INSTDIR\\\\bin\\\\fstl.exe'")
-    set(CPACK_COMPONENTS_ALL all)
-    if (CMAKE_CL_64)
-        set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
-    else (CMAKE_CL_64)
-        set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES")
-    endif (CMAKE_CL_64)
-elseif(APPLE)
-    set(CPACK_GENERATOR "DragNDrop")
-    set(CPACK_DMG_FORMAT "UDBZ")
-    set(CPACK_DMG_VOLUME_NAME "${PROJECT_NAME}")
-    set(CPACK_SYSTEM_NAME "OSX")
-    set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}")
-    set(CPACK_PACKAGE_ICON "${CMAKE_CURRENT_SOURCE_DIR}/app/fstl.icns")
-else()
-    install(TARGETS fstl RUNTIME DESTINATION bin)
-
-    set(CPACK_GENERATOR "DEB;RPM")
-    set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}")
-endif(WIN32)
-
-include(CPack)
+qt5_add_resources(RESOURCES qt/qt.qrc gl/gl.qrc)
+set(CORE src/backdrop.cpp src/axis.cpp src/canvas.cpp src/glmesh.cpp src/loader.cpp src/mesh.cpp)
+add_executable(stl-browser src/main.cpp src/app.cpp src/window.cpp ${CORE} ${RESOURCES})
+target_link_libraries(stl-browser PRIVATE Qt5::Widgets Qt5::OpenGL OpenGL::GL Threads::Threads)
+target_compile_definitions(stl-browser PRIVATE FSTL_VERSION="${PROJECT_VERSION}")
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(browser-tests tests/browser-tests.cpp src/window.cpp ${CORE} ${RESOURCES})
+  target_include_directories(browser-tests PRIVATE src)
+  target_link_libraries(browser-tests PRIVATE Qt5::Test Qt5::Widgets Qt5::OpenGL OpenGL::GL Threads::Threads)
+  target_compile_definitions(browser-tests PRIVATE FSTL_VERSION="${PROJECT_VERSION}")
+  add_test(NAME browser-tests COMMAND browser-tests)
+endif()
+install(TARGETS stl-browser RUNTIME DESTINATION bin)
+install(FILES xdg/stl-browser.desktop DESTINATION share/applications)
+install(FILES qt/icons/fstl_64x64.png DESTINATION share/icons/hicolor/64x64/apps RENAME stl-browser.png)

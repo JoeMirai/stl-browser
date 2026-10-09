@@ -1,6 +1,7 @@
 #include <QMouseEvent>
 
 #include <cmath>
+#include <malloc.h>
 
 #include "axis.h"
 #include "backdrop.h"
@@ -184,13 +185,14 @@ void Canvas::resetTransform()
 
 void Canvas::load_mesh(Mesh* m, bool is_reload)
 {
+    makeCurrent();
     delete mesh;
     mesh = new GLMesh(m);
     QVector3D lower(m->xmin(), m->ymin(), m->zmin());
     QVector3D upper(m->xmax(), m->ymax(), m->zmax());
     if (!is_reload) {
         default_center = center = (lower + upper) / 2;
-        default_scale = scale = 2 / (upper - lower).length();
+        default_scale = scale = 2 / std::max((upper - lower).length(), 0.00001f);
 
         // Reset other camera parameters
         zoom = 1;
@@ -205,6 +207,8 @@ void Canvas::load_mesh(Mesh* m, bool is_reload)
     update();
 
     delete m;
+    doneCurrent();
+    malloc_trim(0); // Return transient STL parsing buffers to the OS.
 }
 
 void Canvas::set_status(const QString& s)
@@ -256,10 +260,10 @@ void Canvas::initializeGL()
 
 void Canvas::paintGL()
 {
-    glClearColor(0.0, 0.0, 0.0, 0.0);
+    glClearColor(backgroundColor.redF(), backgroundColor.greenF(), backgroundColor.blueF(), 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
-    backdrop->draw();
+    if (useClassicBackground) backdrop->draw();
     if (mesh)
         draw_mesh();
     if (drawAxes)
@@ -291,6 +295,7 @@ void Canvas::draw_mesh()
     }
 
     selected_mesh_shader->bind();
+    selected_mesh_shader->setUniformValue("model_tint", QVector3D(modelColor.redF(), modelColor.greenF(), modelColor.blueF()));
 
     // Load the transform and view matrices into the shader
     glUniformMatrix4fv(selected_mesh_shader->uniformLocation("transform_matrix"), 1, GL_FALSE, transform_matrix().data());
@@ -570,4 +575,21 @@ void Canvas::setCurrentLightDirection(int ind)
 void Canvas::resetCurrentLightDirection()
 {
     setCurrentLightDirection(defaultCurrentLightDirection);
+}
+
+void Canvas::setAppearance(QColor model, QColor background, bool classicBackground)
+{
+    modelColor = model;
+    backgroundColor = background;
+    useClassicBackground = classicBackground;
+    update();
+}
+
+void Canvas::clearMesh() {
+    makeCurrent();
+    delete mesh;
+    mesh = nullptr;
+    doneCurrent();
+    meshInfo.clear();
+    update();
 }

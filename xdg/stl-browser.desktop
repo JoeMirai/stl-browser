@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=STL Browser
+Comment=Lightweight STL viewer with folder thumbnails
+Exec=stl-browser %f
+Icon=stl-browser
+Terminal=false
+Categories=Graphics;3DGraphics;Viewer;
+MimeType=model/stl;model/x.stl-ascii;model/x.stl-binary;application/sla;
+StartupWMClass=stl-browser

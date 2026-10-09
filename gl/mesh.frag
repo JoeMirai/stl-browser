@@ -1,6 +1,7 @@
 #version 120
 
 uniform float zoom;
+uniform vec3 model_tint;
 
 varying vec3 ec_pos;
 
@@ -18,4 +19,5 @@ void main() {
 
     gl_FragColor = vec4((a*base2 + (1-a)*base00)*0.5 +
                         (b*base3 + (1-b)*base00)*0.5, 1.0);
+    gl_FragColor.rgb *= model_tint;
 }

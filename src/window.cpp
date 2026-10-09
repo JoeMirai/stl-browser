@@ -1,712 +1,413 @@
-#include <QMenuBar>
-
-#include "canvas.h"
-#include "loader.h"
-#include "shaderlightprefs.h"
 #include "window.h"
+#include <QToolBar>
+#include <QStatusBar>
+#include <QVBoxLayout>
+#include <QFileDialog>
+#include <QSettings>
+#include <QCollator>
+#include <QDirIterator>
+#include <QCryptographicHash>
+#include <QScrollBar>
+#include <QStandardPaths>
+#include <QDateTime>
+#include <QDragEnterEvent>
+#include <QMimeData>
+#include <QDialog>
+#include <QFormLayout>
+#include <QComboBox>
+#include <QCheckBox>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QColorDialog>
+#include <QPushButton>
+#include <QDialogButtonBox>
+#include <QSignalBlocker>
+#include <QSaveFile>
+#include <algorithm>
+#include <functional>
+#include <QCloseEvent>
 
-const QString Window::OPEN_EXTERNAL_KEY = "externalCmd";
-const QString Window::RECENT_FILE_KEY = "recentFiles";
-const QString Window::INVERT_ZOOM_KEY = "invertZoom";
-const QString Window::AUTORELOAD_KEY = "autoreload";
-const QString Window::DRAW_AXES_KEY = "drawAxes";
-const QString Window::PROJECTION_KEY = "projection";
-const QString Window::DRAW_MODE_KEY = "drawMode";
-const QString Window::WINDOW_GEOM_KEY = "windowGeometry";
-const QString Window::RESET_TRANSFORM_ON_LOAD_KEY = "resetTransformOnLoad";
-
-Window::Window(QWidget* parent) :
-    QMainWindow(parent),
-    open_action(new QAction("&Open", this)),
-    open_external_action(new QAction("Open w&ith", this)),
-    about_action(new QAction("&About", this)),
-    quit_action(new QAction("&Quit", this)),
-    perspective_action(new QAction("&Perspective", this)),
-    common_view_center_action(new QAction("&Center the model", this)),
-    common_view_iso_action(new QAction("&Isometric", this)),
-    common_view_top_action(new QAction("&Top", this)),
-    common_view_bottom_action(new QAction("&Bottom", this)),
-    common_view_left_action(new QAction("&Left", this)),
-    common_view_right_action(new QAction("&Right", this)),
-    common_view_front_action(new QAction("&Front", this)),
-    common_view_back_action(new QAction("B&ack", this)),
-    orthographic_action(new QAction("&Orthographic", this)),
-    shaded_action(new QAction("&Shaded", this)),
-    wireframe_action(new QAction("&Wireframe", this)),
-    surfaceangle_action(new QAction("Surface A&ngle", this)),
-    meshlight_action(new QAction("Shaded &ambient and directive light source", this)),
-    drawModePrefs_action(new QAction("Draw Mode &Settings")),
-    axes_action(new QAction("Draw &Axes", this)),
-    invert_zoom_action(new QAction("Invert &Zoom", this)),
-    reload_action(new QAction("Re&load", this)),
-    autoreload_action(new QAction("&Autoreload", this)),
-    save_screenshot_action(new QAction("Save &Screenshot", this)),
-    hide_menuBar_action(new QAction("Hide &Menu Bar", this)),
-    fullscreen_action(new QAction("Toggle &Fullscreen", this)),
-    resetTransformOnLoadAction(new QAction("Reset rotation on load", this)),
-    recent_files(new QMenu("Open &recent", this)),
-    recent_files_group(new QActionGroup(this)),
-    recent_files_clear_action(new QAction("&Clear recent files", this)),
-    watcher(new QFileSystemWatcher(this))
-
-{
-    setWindowTitle("fstl");
+namespace {
+QColor settingColor(const char* key, const char* fallback) {
+    QColor color(QSettings().value(key, fallback).toString());
+    return color.isValid() ? color : QColor(fallback);
+}
+}
+Window::Window(QWidget* parent) : QMainWindow(parent) {
+    setWindowTitle("STL Browser");
     setWindowIcon(QIcon(":/qt/icons/fstl_64x64.png"));
     setAcceptDrops(true);
-
     QSurfaceFormat format;
-    format.setDepthBufferSize(24);
-    format.setStencilBufferSize(8);
     format.setVersion(2, 1);
-    format.setProfile(QSurfaceFormat::CoreProfile);
-
+    format.setDepthBufferSize(24);
     QSurfaceFormat::setDefaultFormat(format);
-
     canvas = new Canvas(format, this);
-    setCentralWidget(canvas);
-
-    meshlightprefs = new ShaderLightPrefs(this, canvas);
-
-    QObject::connect(drawModePrefs_action, &QAction::triggered, this, &Window::on_drawModePrefs);
-
-    QObject::connect(watcher, &QFileSystemWatcher::fileChanged, this, &Window::on_watched_change);
-
-    open_action->setShortcut(QKeySequence::Open);
-    QObject::connect(open_action, &QAction::triggered, this, &Window::on_open);
-    this->addAction(open_action);
-
-    open_external_action->setShortcut(QKeySequence::Open);
-    QObject::connect(open_external_action, &QAction::triggered, this, &Window::on_open_external);
-    this->addAction(open_external_action);
-    open_external_action->setShortcut(QKeySequence(Qt::ALT + Qt::Key_S));
-
-    QList<QKeySequence> quitShortcuts = {QKeySequence::Quit, QKeySequence::Close};
-    quit_action->setShortcuts(quitShortcuts);
-    QObject::connect(quit_action, &QAction::triggered, this, &Window::close);
-    this->addAction(quit_action);
-
-    autoreload_action->setCheckable(true);
-    QObject::connect(autoreload_action, &QAction::triggered, this, &Window::on_autoreload_triggered);
-
-    reload_action->setShortcut(QKeySequence::Refresh);
-    reload_action->setEnabled(false);
-    QObject::connect(reload_action, &QAction::triggered, this, &Window::on_reload);
-
-    QObject::connect(about_action, &QAction::triggered, this, &Window::on_about);
-
-    QObject::connect(recent_files_clear_action, &QAction::triggered, this, &Window::on_clear_recent);
-    QObject::connect(recent_files_group, &QActionGroup::triggered, this, &Window::on_load_recent);
-
-    save_screenshot_action->setCheckable(false);
-    QObject::connect(save_screenshot_action, &QAction::triggered, this, &Window::on_save_screenshot);
-
-    rebuild_recent_files();
-
-    const auto file_menu = menuBar()->addMenu("&File");
-    file_menu->addAction(open_action);
-    file_menu->addAction(open_external_action);
-    file_menu->addMenu(recent_files);
-    file_menu->addSeparator();
-    file_menu->addAction(reload_action);
-    file_menu->addAction(autoreload_action);
-    file_menu->addAction(save_screenshot_action);
-    file_menu->addAction(quit_action);
-
-    const auto view_menu = menuBar()->addMenu("&View");
-    const auto projection_menu = view_menu->addMenu("&Projection");
-    projection_menu->addAction(perspective_action);
-    projection_menu->addAction(orthographic_action);
-    const auto projections = new QActionGroup(projection_menu);
-    for (auto p : {perspective_action, orthographic_action}) {
-        projections->addAction(p);
-        p->setCheckable(true);
+    canvas->setObjectName("viewer");
+    canvas->setFocusPolicy(Qt::StrongFocus);
+    canvas->setToolTip("Left drag: rotate · Right drag: pan · Wheel: zoom · ← / →: previous / next STL");
+    thumbnailCanvas = new Canvas(format);
+    thumbnailCanvas->setAttribute(Qt::WA_DontShowOnScreen);
+    thumbnailCanvas->setAttribute(Qt::WA_QuitOnClose, false);
+    thumbnailCanvas->resize(192, 192);
+    buildUi();
+    applySettings();
+    thumbnailTimer.setSingleShot(true);
+    connect(&thumbnailTimer, &QTimer::timeout, this, &Window::nextThumbnail);
+    connect(&watcher, &QFileSystemWatcher::directoryChanged, this, [this] {
+        QString old = requestedFile;
+        rebuildStrip(directory);
+        int row = files.indexOf(old);
+        if (row < 0 && !files.isEmpty()) row = 0;
+        if (row >= 0) selectFile(row);
+        else { requestedFile.clear(); ++selectionGeneration; if (selectedLoader) selectedLoader->requestInterruption(); canvas->clearMesh(); showError("No readable STL files in this folder"); updateNavigation(); }
+    });
+    resize(1000, 720);
+    restoreGeometry(QSettings().value("windowGeometry").toByteArray());
+    canvas->set_status("Open an STL file or folder to browse models");
+}
+Window::~Window() {
+    closing = true;
+    thumbnailTimer.stop();
+    for (Loader* loader : {selectedLoader, thumbnailLoader}) {
+        if (loader) { loader->requestInterruption(); loader->wait(); }
     }
-    projections->setExclusive(true);
-    QObject::connect(projections, &QActionGroup::triggered, this, &Window::on_projection);
-
-    const auto draw_menu = view_menu->addMenu("&Draw Mode");
-    draw_menu->addAction(shaded_action);
-    draw_menu->addAction(wireframe_action);
-    draw_menu->addAction(surfaceangle_action);
-    draw_menu->addAction(meshlight_action);
-    const auto drawModes = new QActionGroup(draw_menu);
-    for (auto p : {shaded_action, wireframe_action, surfaceangle_action, meshlight_action}) {
-        drawModes->addAction(p);
-        p->setCheckable(true);
+    // Drain queued mesh ownership transfers after workers have stopped.
+    QCoreApplication::sendPostedEvents(this, QEvent::MetaCall);
+    delete thumbnailCanvas;
+}
+QStringList Window::filesInFolder(const QString& folder) {
+    QStringList result;
+    QDirIterator it(folder, QDir::Files | QDir::Readable | QDir::Hidden);
+    while (it.hasNext()) {
+        it.next();
+        if (it.fileInfo().suffix().compare("stl", Qt::CaseInsensitive) == 0)
+            result << it.fileInfo().absoluteFilePath();
     }
-    drawModes->setExclusive(true);
-    QObject::connect(drawModes, &QActionGroup::triggered, this, &Window::on_drawMode);
-    view_menu->addAction(drawModePrefs_action);
-    drawModePrefs_action->setDisabled(true);
-
-    const auto common_menu = view_menu->addMenu("&Viewpoint");
-    common_menu->addAction(common_view_iso_action);
-    common_menu->addAction(common_view_top_action);
-    common_menu->addAction(common_view_bottom_action);
-    common_menu->addAction(common_view_front_action);
-    common_menu->addAction(common_view_back_action);
-    common_menu->addAction(common_view_left_action);
-    common_menu->addAction(common_view_right_action);
-    common_menu->addAction(common_view_center_action);
-    const auto common_views = new QActionGroup(common_menu);
-    common_views->addAction(common_view_iso_action);
-    common_views->addAction(common_view_top_action);
-    common_views->addAction(common_view_bottom_action);
-    common_views->addAction(common_view_front_action);
-    common_views->addAction(common_view_back_action);
-    common_views->addAction(common_view_left_action);
-    common_views->addAction(common_view_right_action);
-    common_views->addAction(common_view_center_action);
-    common_view_iso_action->setShortcut(Qt::Key_0);
-    common_view_top_action->setShortcut(Qt::Key_1);
-    common_view_bottom_action->setShortcut(Qt::Key_2);
-    common_view_front_action->setShortcut(Qt::Key_3);
-    common_view_back_action->setShortcut(Qt::Key_4);
-    common_view_left_action->setShortcut(Qt::Key_5);
-    common_view_right_action->setShortcut(Qt::Key_6);
-    common_view_center_action->setShortcut(Qt::Key_9);
-    QObject::connect(common_views, &QActionGroup::triggered, this, &Window::on_common_view_change);
-
-    view_menu->addAction(axes_action);
-    axes_action->setCheckable(true);
-    QObject::connect(axes_action, &QAction::triggered, this, &Window::on_drawAxes);
-
-    view_menu->addAction(invert_zoom_action);
-    invert_zoom_action->setCheckable(true);
-    QObject::connect(invert_zoom_action, &QAction::triggered, this, &Window::on_invertZoom);
-
-    view_menu->addAction(resetTransformOnLoadAction);
-    resetTransformOnLoadAction->setCheckable(true);
-    QObject::connect(resetTransformOnLoadAction, &QAction::triggered, this, &Window::on_resetTransformOnLoad);
-
-    view_menu->addAction(hide_menuBar_action);
-    hide_menuBar_action->setShortcut(Qt::CTRL + Qt::SHIFT + Qt::Key_C);
-    hide_menuBar_action->setCheckable(true);
-    QObject::connect(hide_menuBar_action, &QAction::toggled, this, &Window::on_hide_menuBar);
-    this->addAction(hide_menuBar_action);
-
-    view_menu->addAction(fullscreen_action);
-    fullscreen_action->setShortcut(Qt::Key_F11);
-    fullscreen_action->setCheckable(true);
-    QObject::connect(fullscreen_action, &QAction::toggled, this, &Window::on_fullscreen);
-    this->addAction(fullscreen_action);
-
-    auto help_menu = menuBar()->addMenu("&Help");
-    help_menu->addAction(about_action);
-
-    load_persist_settings();
+    // The C locale disables numeric collation on some Qt builds.
+    QCollator collator(QLocale(QLocale::English, QLocale::UnitedStates));
+    collator.setNumericMode(true);
+    collator.setCaseSensitivity(Qt::CaseInsensitive);
+    std::sort(result.begin(), result.end(), [&](const QString& a, const QString& b) {
+        int cmp = collator.compare(QFileInfo(a).fileName(), QFileInfo(b).fileName());
+        return cmp == 0 ? a < b : cmp < 0;
+    });
+    return result;
 }
-
-void Window::load_persist_settings()
-{
-    QSettings settings;
-    bool invert_zoom = settings.value(INVERT_ZOOM_KEY, false).toBool();
-    canvas->invert_zoom(invert_zoom);
-    invert_zoom_action->setChecked(invert_zoom);
-
-    bool resetTransformOnLoad = settings.value(RESET_TRANSFORM_ON_LOAD_KEY, true).toBool();
-    canvas->setResetTransformOnLoad(resetTransformOnLoad);
-    resetTransformOnLoadAction->setChecked(resetTransformOnLoad);
-
-    autoreload_action->setChecked(settings.value(AUTORELOAD_KEY, true).toBool());
-
-    bool draw_axes = settings.value(DRAW_AXES_KEY, false).toBool();
-    canvas->draw_axes(draw_axes);
-    axes_action->setChecked(draw_axes);
-
-    QString projection = settings.value(PROJECTION_KEY, "perspective").toString();
-    if (projection == "perspective") {
-        canvas->view_perspective(Canvas::P_PERSPECTIVE, false);
-        perspective_action->setChecked(true);
-    } else {
-        canvas->view_perspective(Canvas::P_ORTHOGRAPHIC, false);
-        orthographic_action->setChecked(true);
-    }
-
-    QString path = settings.value(OPEN_EXTERNAL_KEY, "").toString();
-    if (!QDir::isAbsolutePath(path) && !path.isEmpty()) {
-        path = QStandardPaths::findExecutable(path);
-    }
-    QString displayName = path.mid(path.lastIndexOf(QDir::separator()) + 1);
-    open_external_action->setText("Open w&ith " + displayName);
-    open_external_action->setData(path);
-
-    DrawMode draw_mode = (DrawMode)settings.value(DRAW_MODE_KEY, DRAWMODECOUNT).toInt();
-
-    if (draw_mode >= DRAWMODECOUNT) {
-        draw_mode = shaded;
-    }
-    QAction*(dm_acts[]) = {shaded_action, wireframe_action, surfaceangle_action, meshlight_action};
-    dm_acts[draw_mode]->setChecked(true);
-    on_drawMode(dm_acts[draw_mode]);
-
-    resize(600, 400);
-    restoreGeometry(settings.value(WINDOW_GEOM_KEY).toByteArray());
+QString Window::thumbnailKey(const QString& path, const QByteArray& appearance) {
+    QFileInfo f(path);
+    QByteArray key = f.absoluteFilePath().toUtf8() + '\0' + QByteArray::number(f.size())
+        + ':' + QByteArray::number(f.lastModified().toMSecsSinceEpoch()) + ':' + appearance;
+    return QString::fromLatin1(QCryptographicHash::hash(key, QCryptographicHash::Sha256).toHex());
 }
-
-void Window::on_drawModePrefs()
-{
-    // For now only one draw mode has settings
-    // when settings for other draw mode will be available
-    // we will need to check the current mode
-    if (meshlightprefs->isVisible()) {
-        meshlightprefs->hide();
-    } else {
-        meshlightprefs->show();
-    }
-}
-
-void Window::on_open()
-{
-    const QString filename = QFileDialog::getOpenFileName(this, "Load .stl file", QString(), "STL files (*.stl *.STL)");
-    if (!filename.isNull()) {
-        load_stl(filename);
-    }
-}
-
-void Window::on_open_external() const
-{
-    if (current_file.isEmpty()) {
-        return;
-    }
-
-    QString program = open_external_action->data().toString();
-    if (program.isEmpty()) {
-        program = QFileDialog::getOpenFileName((QWidget*)this, "Select program to open with", QDir::rootPath());
-        if (!program.isEmpty()) {
-            QSettings settings;
-            settings.setValue(OPEN_EXTERNAL_KEY, program);
-            QString displayName = program.mid(program.lastIndexOf(QDir::separator()) + 1);
-            open_external_action->setText("Open w&ith " + displayName);
-            open_external_action->setData(program);
-        }
-    }
-
-    QProcess::startDetached(program, QStringList(current_file));
-}
-
-void Window::on_about()
-{
-    QMessageBox::about(this, "",
-                       "<p align=\"center\"><b>fstl</b><br>" FSTL_VERSION "</p>"
-                       "<p>A fast viewer for <code>.stl</code> files.<br>"
-                       "<a href=\"https://github.com/fstl-app/fstl\""
-                       "   style=\"color: #93a1a1;\">https://github.com/fstl-app/fstl</a></p>"
-                       "<p>© 2014-2025 Matthew Keeter<br>"
-                       "<a href=\"mailto:matt.j.keeter@gmail.com\""
-                       "   style=\"color: #93a1a1;\">matt.j.keeter@gmail.com</a></p>");
-}
-
-void Window::on_bad_stl()
-{
-    QMessageBox::critical(this, "Error",
-                          "<b>Error:</b><br>"
-                          "This <code>.stl</code> file is invalid or corrupted.<br>"
-                          "Please export it from the original source, verify, and retry.");
-}
-
-void Window::on_empty_mesh()
-{
-    QMessageBox::critical(this, "Error",
-                          "<b>Error:</b><br>"
-                          "This file is syntactically correct<br>but contains no triangles.");
-}
-
-void Window::on_missing_file()
-{
-    QMessageBox::critical(this, "Error",
-                          "<b>Error:</b><br>"
-                          "The target file is missing.<br>");
-}
-
-void Window::enable_open()
-{
-    open_action->setEnabled(true);
-}
-
-void Window::disable_open()
-{
-    open_action->setEnabled(false);
-}
-
-void Window::set_watched(const QString& filename)
-{
-    const auto files = watcher->files();
-    if (files.size()) {
-        watcher->removePaths(watcher->files());
-    }
-    watcher->addPath(filename);
-
-    QSettings settings;
-    auto recent = settings.value(RECENT_FILE_KEY).toStringList();
-    const auto f = QFileInfo(filename).absoluteFilePath();
-    recent.removeAll(f);
-    recent.prepend(f);
-    while (recent.size() > MAX_RECENT_FILES) {
-        recent.pop_back();
-    }
-    settings.setValue(RECENT_FILE_KEY, recent);
-    rebuild_recent_files();
-}
-
-void Window::on_projection(QAction* proj)
-{
-    if (proj == perspective_action) {
-        canvas->view_perspective(Canvas::P_PERSPECTIVE, true);
-        QSettings().setValue(PROJECTION_KEY, "perspective");
-    } else {
-        canvas->view_perspective(Canvas::P_ORTHOGRAPHIC, true);
-        QSettings().setValue(PROJECTION_KEY, "orthographic");
-    }
-}
-
-void Window::on_drawMode(QAction* act)
-{
-    // On mode change hide prefs first
-    meshlightprefs->hide();
-
-    DrawMode mode;
-    if (act == shaded_action) {
-        drawModePrefs_action->setEnabled(false);
-        mode = shaded;
-    } else if (act == wireframe_action) {
-        drawModePrefs_action->setEnabled(false);
-        mode = wireframe;
-    } else if (act == surfaceangle_action) {
-        drawModePrefs_action->setEnabled(false);
-        mode = surfaceangle;
-    } else if (act == meshlight_action) {
-        drawModePrefs_action->setEnabled(true);
-        mode = meshlight;
-    }
-    canvas->set_drawMode(mode);
-    QSettings().setValue(DRAW_MODE_KEY, mode);
-}
-
-void Window::on_drawAxes(bool d)
-{
-    canvas->draw_axes(d);
-    QSettings().setValue(DRAW_AXES_KEY, d);
-}
-
-void Window::on_invertZoom(bool d)
-{
-    canvas->invert_zoom(d);
-    QSettings().setValue(INVERT_ZOOM_KEY, d);
-}
-
-void Window::on_resetTransformOnLoad(bool d)
-{
-    canvas->setResetTransformOnLoad(d);
-    QSettings().setValue(RESET_TRANSFORM_ON_LOAD_KEY, d);
-}
-
-void Window::on_watched_change(const QString& filename)
-{
-    if (autoreload_action->isChecked()) {
-        load_stl(filename, true);
-    }
-}
-
-void Window::on_autoreload_triggered(bool b)
-{
-    if (b) {
-        on_reload();
-    }
-    QSettings().setValue(AUTORELOAD_KEY, b);
-}
-
-void Window::on_clear_recent()
-{
-    QSettings settings;
-    settings.setValue(RECENT_FILE_KEY, QStringList());
-    rebuild_recent_files();
-}
-
-void Window::on_load_recent(QAction* a)
-{
-    load_stl(a->data().toString());
-}
-
-void Window::on_loaded(const QString& filename)
-{
-    current_file = filename;
-}
-
-void Window::on_save_screenshot()
-{
-    const auto image = canvas->grabFramebuffer();
-    auto file_name = QFileDialog::getSaveFileName(
-        this, tr("Save Screenshot Image"),
-        QStandardPaths::standardLocations(QStandardPaths::StandardLocation::PicturesLocation).first(), "Images (*.png *.jpg)");
-
-    auto get_file_extension = [](const std::string& file_name) -> std::string {
-        const auto location = std::find(file_name.rbegin(), file_name.rend(), '.');
-        if (location == file_name.rend()) {
-            return "";
-        }
-
-        const auto index = std::distance(file_name.rbegin(), location);
-        return file_name.substr(file_name.size() - index);
+void Window::buildUi() {
+    auto* toolbar = addToolBar("Browse");
+    toolbar->setMovable(false);
+    toolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    auto add = [&](const QString& text, const QString& tip, std::function<void()> fn) {
+        QAction* action = toolbar->addAction(text);
+        action->setToolTip(tip);
+        connect(action, &QAction::triggered, this, fn);
+        return action;
     };
-
-    const auto extension = get_file_extension(file_name.toStdString());
-    if (extension.empty() || (extension != "png" && extension != "jpg")) {
-        file_name.append(".png");
-    }
-
-    const auto save_ok = image.save(file_name);
-    if (!save_ok) {
-        QMessageBox::warning(this, tr("Error Saving Image"), tr("Unable to save screen shot image."));
-    }
+    add("Open STL…", "Choose an STL file and browse the other STL files in its folder.", [this] {
+        QString path = QFileDialog::getOpenFileName(this, "Open STL", directory, "STL models (*.stl *.STL);;All files (*)");
+        if (!path.isEmpty()) load_stl(path);
+    })->setShortcut(QKeySequence::Open);
+    add("Open folder…", "Browse STL files directly inside a folder. Subfolders are not scanned.", [this] {
+        QString path = QFileDialog::getExistingDirectory(this, "Open folder", directory);
+        if (!path.isEmpty()) load_stl(path);
+    });
+    toolbar->addSeparator();
+    previous = add("← Previous", "Open the previous STL in filename order. Shortcut: Left arrow.", [this] { load_prev(); });
+    next = add("Next →", "Open the next STL in filename order. Shortcut: Right arrow.", [this] { load_next(); });
+    previous->setShortcut(Qt::Key_Left); next->setShortcut(Qt::Key_Right);
+    previous->setShortcutContext(Qt::WindowShortcut); next->setShortcutContext(Qt::WindowShortcut);
+    add("Reset view", "Fit the model and return to the starting camera angle. Shortcut: Home.", [this] { canvas->common_view_change(isoview); canvas->common_view_change(centerview); })->setShortcut(Qt::Key_Home);
+    toolbar->addSeparator();
+    add("Settings…", "Change shading, colors, lighting, camera behavior, and thumbnail size.", [this] { showSettings(); });
+    auto* central = new QWidget;
+    auto* layout = new QVBoxLayout(central);
+    layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(0);
+    layout->addWidget(canvas, 1);
+    strip = new QListWidget;
+    strip->setObjectName("thumbnailStrip");
+    strip->setViewMode(QListView::IconMode);
+    strip->setFlow(QListView::LeftToRight);
+    strip->setWrapping(false);
+    strip->setMovement(QListView::Static);
+    strip->setResizeMode(QListView::Adjust);
+    strip->setSelectionMode(QAbstractItemView::SingleSelection);
+    strip->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    strip->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    strip->setSpacing(6);
+    strip->setFocusPolicy(Qt::NoFocus);
+    strip->setStyleSheet("QListWidget { background: #20272d; color: #e6edf3; border: 0; border-top: 1px solid #44505a; } QListWidget::item { border-radius: 6px; padding: 4px; } QListWidget::item:selected { background: #285d72; border: 1px solid #70c7e7; }");
+    strip->setToolTip("Click a thumbnail to open its STL. Scroll horizontally to browse more models.");
+    layout->addWidget(strip);
+    connect(strip, &QListWidget::currentRowChanged, this, &Window::selectFile);
+    connect(strip->horizontalScrollBar(), &QScrollBar::valueChanged, this, [this] { scheduleThumbnail(); });
+    setCentralWidget(central);
+    info = new QLabel("No folder open"); info->setObjectName("fileInfo");
+    statusBar()->addWidget(info, 1);
+    updateNavigation();
 }
-
-void Window::on_hide_menuBar()
-{
-    menuBar()->setVisible(!hide_menuBar_action->isChecked());
-}
-
-void Window::rebuild_recent_files()
-{
-    QSettings settings;
-    QStringList files = settings.value(RECENT_FILE_KEY).toStringList();
-
-    const auto actions = recent_files_group->actions();
-    for (auto a : actions) {
-        recent_files_group->removeAction(a);
+bool Window::load_stl(const QString& input, bool) {
+    if (input.isEmpty()) return false;
+    QFileInfo f(input);
+    QString folder = f.isDir() ? f.absoluteFilePath() : f.absolutePath();
+    rebuildStrip(folder);
+    if (files.isEmpty()) {
+        requestedFile.clear(); ++selectionGeneration;
+        if (selectedLoader) selectedLoader->requestInterruption();
+        canvas->clearMesh();
+        showError("No readable STL files in this folder"); updateNavigation(); return false;
     }
-    recent_files->clear();
-
-    for (auto f : files) {
-        const auto a = new QAction(f, recent_files);
-        a->setData(f);
-        recent_files_group->addAction(a);
-        recent_files->addAction(a);
-    }
-    if (files.size() == 0) {
-        auto a = new QAction("No recent files", recent_files);
-        recent_files->addAction(a);
-        a->setEnabled(false);
-    }
-    recent_files->addSeparator();
-    recent_files->addAction(recent_files_clear_action);
-}
-
-void Window::on_reload()
-{
-    auto fs = watcher->files();
-    if (fs.size() == 1) {
-        load_stl(fs[0], true);
-    }
-}
-
-void Window::on_common_view_change(QAction* common)
-{
-    if (common == common_view_center_action)
-        canvas->common_view_change(centerview);
-    if (common == common_view_iso_action)
-        canvas->common_view_change(isoview);
-    if (common == common_view_top_action)
-        canvas->common_view_change(topview);
-    if (common == common_view_bottom_action)
-        canvas->common_view_change(bottomview);
-    if (common == common_view_left_action)
-        canvas->common_view_change(leftview);
-    if (common == common_view_right_action)
-        canvas->common_view_change(rightview);
-    if (common == common_view_front_action)
-        canvas->common_view_change(frontview);
-    if (common == common_view_back_action)
-        canvas->common_view_change(backview);
-}
-
-bool Window::load_stl(const QString& filename, bool is_reload)
-{
-    if (!open_action->isEnabled())
-        return false;
-
-    canvas->set_status("Loading " + filename);
-
-    Loader* loader = new Loader(this, filename, is_reload);
-    connect(loader, &Loader::started, this, &Window::disable_open);
-
-    connect(loader, &Loader::got_mesh, canvas, &Canvas::load_mesh);
-    connect(loader, &Loader::error_bad_stl, this, &Window::on_bad_stl);
-    connect(loader, &Loader::error_empty_mesh, this, &Window::on_empty_mesh);
-    connect(loader, &Loader::error_missing_file, this, &Window::on_missing_file);
-
-    connect(loader, &Loader::finished, loader, &Loader::deleteLater);
-    connect(loader, &Loader::finished, this, &Window::enable_open);
-    connect(loader, &Loader::finished, canvas, &Canvas::clear_status);
-
-    if (filename[0] != ':') {
-        connect(loader, &Loader::loaded_file, this, &Window::setWindowTitle);
-        connect(loader, &Loader::loaded_file, this, &Window::set_watched);
-        connect(loader, &Loader::loaded_file, this, &Window::on_loaded);
-        reload_action->setEnabled(true);
-    }
-
-    loader->start();
+    int row = f.isDir() ? 0 : files.indexOf(f.absoluteFilePath());
+    if (row < 0) { showError("Choose a readable .stl file or a folder"); return false; }
+    selectFile(row);
     return true;
 }
-
-void Window::dragEnterEvent(QDragEnterEvent* event)
-{
-    if (event->mimeData()->hasUrls()) {
-        auto urls = event->mimeData()->urls();
-        if (urls.size() == 1 && urls.front().path().endsWith(".stl"))
-            event->acceptProposedAction();
+void Window::rebuildStrip(const QString& folder) {
+    QStringList updated = filesInFolder(folder);
+    if (folder == directory && updated == files) return;
+    if (!watcher.directories().isEmpty()) watcher.removePaths(watcher.directories());
+    directory = folder; files = updated;
+    if (QFileInfo(directory).isDir()) watcher.addPath(directory);
+    QSignalBlocker block(strip);
+    strip->clear(); failedThumbnails.clear();
+    placeholder = QPixmap(192,192); placeholder.fill(QColor("#303b44"));
+    for (const QString& path : files) {
+        auto* item = new QListWidgetItem(QIcon(placeholder), QFileInfo(path).fileName(), strip);
+        item->setToolTip(path + "\nClick to open this model");
+        item->setTextAlignment(Qt::AlignHCenter);
     }
+    scheduleThumbnail();
 }
-
-void Window::dropEvent(QDropEvent* event)
-{
-    load_stl(event->mimeData()->urls().front().toLocalFile());
+void Window::selectFile(int row) {
+    if (row < 0 || row >= files.size()) return;
+    requestedFile = files[row]; ++selectionGeneration;
+    { QSignalBlocker block(strip); strip->setCurrentRow(row); }
+    strip->scrollToItem(strip->item(row));
+    updateNavigation();
+    canvas->set_status("Loading " + QFileInfo(requestedFile).fileName());
+    if (selectedLoader) selectedLoader->requestInterruption();
+    if (thumbnailLoader) thumbnailLoader->requestInterruption();
+    startSelected();
 }
-
-void Window::resizeEvent(QResizeEvent* event)
-{
-    QSettings().setValue(WINDOW_GEOM_KEY, saveGeometry());
-    QWidget::resizeEvent(event);
+void Window::startSelected() {
+    if (closing || selectedLoader || thumbnailLoader || requestedFile.isEmpty()) return;
+    const QString path = requestedFile;
+    const quint64 generation = selectionGeneration;
+    auto* loader = new Loader(this, path, false);
+    selectedLoader = loader;
+    auto fail = [this, generation](const QString& message) {
+        if (generation == selectionGeneration) { canvas->clearMesh(); showError(message); }
+    };
+    connect(loader, &Loader::error_bad_stl, this, [fail] { fail("Invalid or damaged STL file — use the arrows to continue"); });
+    connect(loader, &Loader::error_empty_mesh, this, [fail] { fail("This STL contains no triangles — use the arrows to continue"); });
+    connect(loader, &Loader::error_missing_file, this, [fail] { fail("Unable to read this file — use the arrows to continue"); });
+    connect(loader, &Loader::got_mesh, this, [this, generation](Mesh* mesh, bool) {
+        if (closing || generation != selectionGeneration) { delete mesh; return; }
+        const int count = mesh->triCount();
+        canvas->load_mesh(mesh, false);
+        canvas->clear_status();
+        info->setText(QString("%1 / %2  ·  %3  ·  %4 triangles").arg(strip->currentRow()+1).arg(files.size()).arg(QFileInfo(requestedFile).fileName()).arg(count));
+    });
+    connect(loader, &QThread::finished, this, [this, loader, generation] {
+        selectedLoader = nullptr; loader->deleteLater();
+        if (closing) return;
+        if (generation != selectionGeneration) startSelected();
+        else scheduleThumbnail();
+    });
+    loader->start(QThread::NormalPriority);
 }
-
-void Window::moveEvent(QMoveEvent* event)
-{
-    QSettings().setValue(WINDOW_GEOM_KEY, saveGeometry());
-    QWidget::moveEvent(event);
+void Window::updateNavigation() {
+    int row = files.indexOf(requestedFile);
+    previous->setEnabled(row > 0);
+    next->setEnabled(row >= 0 && row + 1 < files.size());
+    info->setText(row < 0 ? QString("%1 STL files").arg(files.size()) : QString("%1 / %2  ·  %3").arg(row+1).arg(files.size()).arg(QFileInfo(requestedFile).fileName()));
+    setWindowTitle(row < 0 ? "STL Browser" : QFileInfo(requestedFile).fileName() + " — STL Browser");
 }
-
-void Window::sorted_insert(QStringList& list, const QCollator& collator, const QString& value)
-{
-    int start = 0;
-    int end = list.size() - 1;
-    int index = 0;
-    while (start <= end) {
-        int mid = (start + end) / 2;
-        if (list[mid] == value) {
-            return;
-        }
-        int compare = collator.compare(value, list[mid]);
-        if (compare < 0) {
-            end = mid - 1;
-            index = mid;
-        } else {
-            start = mid + 1;
-            index = start;
-        }
-    }
-
-    list.insert(index, value);
+bool Window::load_prev() { int row = files.indexOf(requestedFile); if (row <= 0) return false; selectFile(row-1); return true; }
+bool Window::load_next() { int row = files.indexOf(requestedFile); if (row < 0 || row+1 >= files.size()) return false; selectFile(row+1); return true; }
+void Window::showError(const QString& text) { canvas->set_status(text); statusBar()->showMessage(text, 8000); }
+QByteArray Window::appearanceKey() const {
+    QSettings s;
+    QByteArray key("renderer-v2:192");
+    for (const char* name : {"drawMode", "modelColor", "backgroundColor", "classicBackground", "ambientColor", "directiveColor", "ambientFactor", "directiveFactor", "currentLightDirection", "projection"})
+        key += QByteArray(name) + '=' + s.value(name).toString().toUtf8() + ';';
+    return key;
 }
-
-void Window::build_folder_file_list()
-{
-    QString current_folder_path = QFileInfo(current_file).absoluteDir().absolutePath();
-    if (!lookup_folder_files.isEmpty()) {
-        if (current_folder_path == lookup_folder) {
-            return;
-        }
-
-        lookup_folder_files.clear();
-    }
-    lookup_folder = current_folder_path;
-
-    QCollator collator;
-    collator.setNumericMode(true);
-
-    QDirIterator dirIterator(lookup_folder, QStringList() << "*.stl", QDir::Files | QDir::Readable | QDir::Hidden);
-    while (dirIterator.hasNext()) {
-        dirIterator.next();
-
-        QString name = dirIterator.fileName();
-        sorted_insert(lookup_folder_files, collator, name);
-    }
+QString Window::cachePath(const QString& key) const {
+    QString folder = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/thumbnails";
+    QDir().mkpath(folder);
+    return folder + '/' + key + ".png";
 }
-
-QPair<QString, QString> Window::get_file_neighbors()
-{
-    if (current_file.isEmpty()) {
-        return QPair<QString, QString>(QString(), QString());
-    }
-
-    build_folder_file_list();
-
-    QFileInfo fileInfo(current_file);
-
-    QString current_dir = fileInfo.absoluteDir().absolutePath();
-    QString current_name = fileInfo.fileName();
-
-    QString prev = QString();
-    QString next = QString();
-
-    QListIterator<QString> fileIterator(lookup_folder_files);
-    while (fileIterator.hasNext()) {
-        QString name = fileIterator.next();
-
-        if (name == current_name) {
-            if (fileIterator.hasNext()) {
-                next = current_dir + QDir::separator() + fileIterator.next();
+void Window::scheduleThumbnail() { if (!closing) thumbnailTimer.start(100); }
+void Window::nextThumbnail() {
+    if (closing || selectedLoader || thumbnailLoader || files.isEmpty()) return;
+    const QByteArray appearance = appearanceKey();
+    // QListWidget icons also own pixmaps; release icons outside the viewport
+    // so browsing a large folder cannot bypass the bounded QCache.
+    for (int row=0; row<strip->count(); ++row) {
+        auto* item = strip->item(row);
+        if (!strip->visualItemRect(item).intersects(strip->viewport()->rect()) && row!=strip->currentRow()) {
+            if (item->data(Qt::UserRole).isValid()) {
+                item->setIcon(QIcon(placeholder)); item->setData(Qt::UserRole,QVariant());
             }
-            break;
         }
-
-        prev = name;
     }
-
-    if (!prev.isEmpty()) {
-        prev.prepend(QDir::separator());
-        prev.prepend(current_dir);
-    }
-
-    return QPair<QString, QString>(prev, next);
-}
-
-bool Window::load_prev(void)
-{
-    QPair<QString, QString> neighbors = get_file_neighbors();
-    if (neighbors.first.isEmpty()) {
-        return false;
-    }
-
-    return load_stl(neighbors.first);
-}
-
-bool Window::load_next(void)
-{
-    QPair<QString, QString> neighbors = get_file_neighbors();
-    if (neighbors.second.isEmpty()) {
-        return false;
-    }
-
-    return load_stl(neighbors.second);
-}
-
-void Window::keyPressEvent(QKeyEvent* event)
-{
-    if (!open_action->isEnabled()) {
-        QMainWindow::keyPressEvent(event);
+    for (int row = 0; row < strip->count(); ++row) {
+        auto* item = strip->item(row);
+        if (!strip->visualItemRect(item).intersects(strip->viewport()->rect())) continue;
+        const QString path = files[row];
+        const QString key = thumbnailKey(path, appearance);
+        if (item->data(Qt::UserRole).toString() == key || failedThumbnails.contains(key)) continue;
+        if (auto* cached = thumbnails.object(key)) {
+            item->setIcon(QIcon(*cached)); item->setData(Qt::UserRole, key); continue;
+        }
+        QPixmap cached(cachePath(key));
+        if (!cached.isNull()) {
+            thumbnails.insert(key, new QPixmap(cached), std::max(1, cached.width()*cached.height()*4/1024));
+            item->setIcon(QIcon(cached)); item->setData(Qt::UserRole, key); continue;
+        }
+        const quint64 generation = selectionGeneration;
+        auto* loader = new Loader(this, path, false);
+        thumbnailLoader = loader;
+        auto fail = [this, key] { failedThumbnails.insert(key); };
+        connect(loader, &Loader::error_bad_stl, this, fail);
+        connect(loader, &Loader::error_empty_mesh, this, fail);
+        connect(loader, &Loader::error_missing_file, this, fail);
+        connect(loader, &Loader::got_mesh, this, [this, path, key, appearance, generation](Mesh* mesh, bool) {
+            if (closing || generation != selectionGeneration || appearance != appearanceKey() || !files.contains(path)) { delete mesh; return; }
+            if (!thumbnailCanvas->isVisible()) thumbnailCanvas->show();
+            if (!thumbnailCanvas->isValid()) { delete mesh; failedThumbnails.insert(key); return; }
+            thumbnailCanvas->load_mesh(mesh, false);
+            QImage image = thumbnailCanvas->grabFramebuffer();
+            thumbnailCanvas->clearMesh();
+            if (image.isNull()) { failedThumbnails.insert(key); return; }
+            QPixmap pix = QPixmap::fromImage(image);
+            thumbnails.insert(key, new QPixmap(pix), std::max(1, pix.width()*pix.height()*4/1024));
+            QSaveFile file(cachePath(key));
+            if (file.open(QIODevice::WriteOnly) && image.save(&file, "PNG")) file.commit();
+            int currentRow = files.indexOf(path);
+            if (currentRow >= 0) { strip->item(currentRow)->setIcon(QIcon(pix)); strip->item(currentRow)->setData(Qt::UserRole, key); }
+            trimDiskCache();
+        });
+        connect(loader, &QThread::finished, this, [this, loader, generation] {
+            thumbnailLoader = nullptr; loader->deleteLater();
+            if (closing) return;
+            if (generation != selectionGeneration) startSelected();
+            else scheduleThumbnail();
+        });
+        loader->start(QThread::LowPriority);
         return;
     }
-
-    if (event->key() == Qt::Key_Left) {
-        load_prev();
-        return;
-    } else if (event->key() == Qt::Key_Right) {
-        load_next();
-        return;
-    } else if (event->key() == Qt::Key_Escape) {
-        hide_menuBar_action->setChecked(false);
-        return;
-    }
-
-    QMainWindow::keyPressEvent(event);
 }
-
-void Window::on_fullscreen()
-{
-    if (!this->isFullScreen()) {
-        this->showFullScreen();
-    } else {
-        this->showNormal();
+void Window::trimDiskCache() {
+    QDir dir(QFileInfo(cachePath("unused")).absolutePath());
+    auto entries = dir.entryInfoList({"*.png"}, QDir::Files, QDir::Time | QDir::Reversed);
+    qint64 size = 0;
+    for (const auto& f : entries) size += f.size();
+    for (const auto& f : entries) { if (size <= 200*1024*1024) break; if (QFile::remove(f.absoluteFilePath())) size -= f.size(); }
+}
+void Window::applySettings() {
+    QSettings s;
+    int mode = qBound(0, s.value("drawMode", 0).toInt(), 3);
+    for (Canvas* c : {canvas, thumbnailCanvas}) {
+        c->set_drawMode(static_cast<DrawMode>(mode));
+        c->setAppearance(settingColor("modelColor", "#ffffff"), settingColor("backgroundColor", "#173b46"), s.value("classicBackground", true).toBool());
+        c->setAmbientColor(settingColor("ambientColor", "#38ccff"));
+        c->setDirectiveColor(settingColor("directiveColor", "#ffffff"));
+        c->setAmbientFactor(s.value("ambientFactor", 0.67).toDouble());
+        c->setDirectiveFactor(s.value("directiveFactor", 0.5).toDouble());
+        c->setCurrentLightDirection(qBound(0, s.value("currentLightDirection", 1).toInt(), c->getNameDir().size()-1));
+        c->view_perspective(s.value("projection", "perspective").toString() == "perspective" ? Canvas::P_PERSPECTIVE : Canvas::P_ORTHOGRAPHIC, false);
     }
+    canvas->setResetTransformOnLoad(s.value("resetTransformOnLoad", true).toBool());
+    canvas->invert_zoom(s.value("invertZoom", false).toBool());
+    canvas->draw_axes(s.value("drawAxes", false).toBool());
+    thumbnailCanvas->setResetTransformOnLoad(true);
+    thumbnailCanvas->draw_axes(false);
+    thumbnailCanvas->clear_status();
+    thumbnailSize = qBound(64, s.value("thumbnailSize", 96).toInt(), 160);
+    strip->setIconSize(QSize(thumbnailSize, thumbnailSize));
+    strip->setGridSize(QSize(thumbnailSize+36, thumbnailSize+42));
+    strip->setFixedHeight(thumbnailSize+68);
+    if (thumbnailLoader) thumbnailLoader->requestInterruption();
+    thumbnails.clear(); failedThumbnails.clear();
+    for (int i=0; i<strip->count(); ++i) strip->item(i)->setData(Qt::UserRole, QVariant());
+    scheduleThumbnail();
+}
+void Window::showSettings() {
+    if (findChild<QDialog*>("settingsDialog")) return;
+    auto* dialog = new QDialog(this);
+    dialog->setObjectName("settingsDialog"); dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle("STL Browser settings");
+    auto* form = new QFormLayout(dialog);
+    auto row = [form](const QString& label, QWidget* widget, const QString& tip) {
+        widget->setToolTip(tip); widget->setAccessibleName(label); form->addRow(label, widget);
+        if (auto* l = form->labelForField(widget)) l->setToolTip(tip);
+    };
+    auto combo = [&](const char* key, const QString& label, const QStringList& values, int current, const QString& tip) {
+        auto* c = new QComboBox; c->addItems(values); c->setCurrentIndex(current); row(label, c, tip);
+        connect(c, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key](int i) { QSettings().setValue(key, i); applySettings(); });
+    };
+    combo("drawMode", "Shading", {"Classic fstl", "Wireframe", "Surface angle", "Custom lighting"}, QSettings().value("drawMode",0).toInt(), "Classic matches fstl. Wireframe shows edges. Surface angle colors face orientation. Custom lighting enables the light controls below.");
+    auto color = [&](const char* key, const char* fallback, const QString& label, const QString& tip) {
+        auto* b = new QPushButton(settingColor(key, fallback).name()); row(label, b, tip);
+        connect(b, &QPushButton::clicked, dialog, [this,b,key,fallback,dialog] {
+            QColor c = QColorDialog::getColor(settingColor(key,fallback), dialog, "Choose color");
+            if (c.isValid()) { QSettings().setValue(key,c.name()); b->setText(c.name()); applySettings(); }
+        });
+    };
+    color("modelColor", "#ffffff", "Model tint", "Tint the model in Classic or Custom lighting mode. White preserves the original fstl colors. Orientation and wireframe modes use their own colors.");
+    color("backgroundColor", "#173b46", "Background color", "Solid viewport background color. Turn off Classic background to use this color.");
+    auto check = [&](const char* key, const QString& label, bool fallback, const QString& tip) {
+        auto* c = new QCheckBox; c->setChecked(QSettings().value(key,fallback).toBool()); row(label,c,tip);
+        connect(c,&QCheckBox::toggled,this,[this,key](bool b) { QSettings().setValue(key,b); applySettings(); });
+    };
+    check("classicBackground", "Classic background", true, "Use fstl’s blue gradient background. Turn off to use a solid custom color.");
+    color("ambientColor", "#38ccff", "Ambient light color", "Color illuminating the whole model in Custom lighting mode.");
+    color("directiveColor", "#ffffff", "Directional light color", "Color of the directional light in Custom lighting mode.");
+    auto strength = [&](const char* key, const QString& label, double fallback, const QString& tip) {
+        auto* spin = new QDoubleSpinBox; spin->setRange(0,2); spin->setSingleStep(0.05); spin->setValue(QSettings().value(key,fallback).toDouble()); row(label,spin,tip);
+        connect(spin,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this,key](double v) { QSettings().setValue(key,v); applySettings(); });
+    };
+    strength("ambientFactor","Ambient strength",0.67,"Brightness of overall illumination in Custom lighting mode. Lower values deepen shadows.");
+    strength("directiveFactor","Directional strength",0.5,"Brightness of directional lighting in Custom lighting mode. Higher values emphasize face angles.");
+    QStringList directions; for (const auto& d : canvas->getNameDir()) directions << d;
+    combo("currentLightDirection","Light direction",directions,canvas->getCurrentLightDirection(),"Direction the light comes from in Custom lighting mode, relative to the view.");
+    auto* projection = new QComboBox; projection->addItems({"Perspective","Orthographic"}); projection->setCurrentIndex(QSettings().value("projection","perspective").toString()=="perspective"?0:1);
+    row("Projection",projection,"Perspective shows depth. Orthographic keeps parallel edges parallel for inspecting shapes.");
+    connect(projection,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int i) { QSettings().setValue("projection",i==0?"perspective":"orthographic"); applySettings(); });
+    auto* size = new QSpinBox; size->setRange(64,160); size->setSingleStep(16); size->setSuffix(" px"); size->setValue(thumbnailSize);
+    row("Thumbnail size",size,"Size of the bottom previews. Smaller previews show more files at once.");
+    connect(size,QOverload<int>::of(&QSpinBox::valueChanged),this,[this](int value) { QSettings().setValue("thumbnailSize",value); applySettings(); });
+    check("resetTransformOnLoad","Reset rotation on file change",true,"Return to the initial camera angle when opening another STL. Turn off to compare models at the same rotation; each model still fits the viewport.");
+    check("invertZoom","Invert zoom",false,"Reverse the mouse wheel’s zoom direction.");
+    check("drawAxes","Show axes and dimensions",false,"Show coordinate axes, triangle count, and model bounds. STL files do not encode physical units.");
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close | QDialogButtonBox::RestoreDefaults); form->addRow(buttons);
+    buttons->button(QDialogButtonBox::Close)->setToolTip("Close settings. Changes are already saved.");
+    buttons->button(QDialogButtonBox::RestoreDefaults)->setToolTip("Restore the app’s original shading, colors, camera, and thumbnail settings.");
+    connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::close);
+    connect(buttons->button(QDialogButtonBox::RestoreDefaults),&QPushButton::clicked,this,[this,dialog] {
+        QSettings s; for (const char* k : {"drawMode","modelColor","backgroundColor","classicBackground","ambientColor","directiveColor","ambientFactor","directiveFactor","currentLightDirection","projection","thumbnailSize","resetTransformOnLoad","invertZoom","drawAxes"}) s.remove(k);
+        applySettings(); dialog->setObjectName("oldSettingsDialog"); dialog->close(); showSettings();
+    });
+    dialog->show();
+}
+void Window::dragEnterEvent(QDragEnterEvent* event) {
+    const auto urls = event->mimeData()->urls();
+    if (urls.size()!=1 || !urls.first().isLocalFile()) return;
+    QFileInfo f(urls.first().toLocalFile());
+    if (f.isDir() || f.suffix().compare("stl",Qt::CaseInsensitive)==0) event->acceptProposedAction();
+}
+void Window::dropEvent(QDropEvent* event) { load_stl(event->mimeData()->urls().first().toLocalFile()); }
+void Window::closeEvent(QCloseEvent* event) {
+    QSettings().setValue("windowGeometry",saveGeometry());
+    thumbnailTimer.stop();
+    thumbnailCanvas->hide();
+    QMainWindow::closeEvent(event);
+    if (event->isAccepted()) emit closed();
 }
