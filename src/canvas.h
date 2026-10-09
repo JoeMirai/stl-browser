@@ -11,7 +11,7 @@ class Backdrop;
 class Axis;
 
 enum ViewPoint { centerview, isoview, topview, bottomview, leftview, rightview, frontview, backview };
-enum DrawMode { shaded, wireframe, surfaceangle, meshlight, DRAWMODECOUNT };
+enum DrawMode { shaded, wireframe, surfaceangle, meshlight, solidwireframe, DRAWMODECOUNT };
 
 class Canvas : public QOpenGLWidget, protected QOpenGLFunctions
 {
@@ -107,6 +107,7 @@ private:
     const static QString DIRECTIVE_FACTOR;
     const static QString CURRENT_LIGHT_DIRECTION;
 
+    int meshTriangleCount = 0;
     GLMesh* mesh;
     Backdrop* backdrop = nullptr;
     Axis* axis = nullptr;

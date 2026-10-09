@@ -188,6 +188,7 @@ void Canvas::load_mesh(Mesh* m, bool is_reload)
     makeCurrent();
     delete mesh;
     mesh = new GLMesh(m);
+    meshTriangleCount = m->triCount();
     QVector3D lower(m->xmin(), m->ymin(), m->zmin());
     QVector3D upper(m->xmax(), m->ymax(), m->zmax());
     if (!is_reload) {
@@ -284,7 +285,7 @@ void Canvas::draw_mesh()
         selected_mesh_shader = &mesh_wireframe_shader;
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     } else {
-        if (drawMode == shaded) {
+        if (drawMode == shaded || drawMode == solidwireframe) {
             selected_mesh_shader = &mesh_shader;
         } else if (drawMode == surfaceangle) {
             selected_mesh_shader = &mesh_surfaceangle_shader;
@@ -333,8 +334,35 @@ void Canvas::draw_mesh()
     const GLuint vp = selected_mesh_shader->attributeLocation("vertex_position");
     glEnableVertexAttribArray(vp);
 
-    // Then draw the mesh with that vertex position
+    // Offset filled triangles to keep the edge overlay free of z-fighting.
+    if (drawMode == solidwireframe) {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(1.0f, 1.0f);
+    }
+    if (drawMode == wireframe) selected_mesh_shader->setUniformValue("wire_color", QVector4D(1, 1, 1, 1));
     mesh->draw(vp);
+    if (drawMode == solidwireframe) {
+        glDisable(GL_POLYGON_OFFSET_FILL);
+        glDisableVertexAttribArray(vp);
+        selected_mesh_shader->release();
+        mesh_wireframe_shader.bind();
+        mesh_wireframe_shader.setUniformValue("transform_matrix", transform_matrix());
+        mesh_wireframe_shader.setUniformValue("view_matrix", view_matrix());
+        // Dense meshes get subtler lines so the solid surface stays readable.
+        float opacity = meshTriangleCount > 100000 ? 0.16f : 0.42f;
+        mesh_wireframe_shader.setUniformValue("wire_color", QVector4D(0.03f, 0.10f, 0.14f, opacity));
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        const GLuint edge = mesh_wireframe_shader.attributeLocation("vertex_position");
+        glEnableVertexAttribArray(edge);
+        mesh->draw(edge);
+        glDisableVertexAttribArray(edge);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glDisable(GL_BLEND);
+        mesh_wireframe_shader.release();
+        return;
+    }
 
     // Reset draw mode for the background and anything else that needs to be drawn
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);

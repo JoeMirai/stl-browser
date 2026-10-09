@@ -1,5 +1,12 @@
 name: Linux build and tests
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -11,7 +18,9 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j2
       - name: Tests with software OpenGL
         run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ctest --test-dir build --output-on-failure
+      - name: Package Linux downloads
+        run: cpack --config build/CPackConfig.cmake -B dist
       - uses: actions/upload-artifact@v4
         with:
           name: stl-browser-linux-x86_64
-          path: build/stl-browser
+          path: dist/*

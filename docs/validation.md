@@ -9,7 +9,7 @@ Tested on Ubuntu 26.04.1 / GNOME with Qt 5.15.18.
 - Appearance/file cache invalidation, persistent settings, hover tooltips.
 - A 1,000-file folder: only visible thumbnail images load; old icons release
   their images after scrolling away.
-- Real Sonic models, including a 674,034-triangle head, render in all four shading modes.
+- Real Sonic models, including a 674,034-triangle head, render in all five shading modes.
 
 With that head loaded and thumbnails complete, the installed app used about
 171 MiB resident memory and 0% CPU over a five-second idle sample. The original
@@ -21,7 +21,9 @@ Transient parsing buffers are returned to the OS after model upload. Images
 have a 32 MiB memory-cache limit and 200 MiB disk-cache limit; total application
 RAM is not limited to those sizes.
 
-The GUI suite runs on the desktop display and also with software OpenGL.
+The GUI suite runs under GNOME Wayland, XWayland, and software OpenGL.
+Solid + wireframe is checked against the shaded framebuffer, and captures of
+Benchy, Bunny, and Teapot verify real rendering in the public showcase.
 GitHub Actions builds on Ubuntu 24.04 and runs the same suite under Xvfb.
 The optional local Sonic-fixture test skips on CI because model files are not
 stored in this repository.

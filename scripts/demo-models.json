@@ -1,0 +1,14 @@
+{
+  "3DBenchy.stl": {
+    "url": "https://raw.githubusercontent.com/CreativeTools/3DBenchy/master/Single-part/3DBenchy.stl",
+    "sha256": "6ab57f1c3f8e86bc3cbd302c6fa6270acf06277c6335454e922419c25d42e97e"
+  },
+  "Stanford Bunny.stl": {
+    "url": "https://upload.wikimedia.org/wikipedia/commons/4/43/Stanford_Bunny.stl",
+    "sha256": "e1ff1293a49eb066de3c02cde6ccd260835e9da8544d43b1411f83f2d55c2eba"
+  },
+  "Utah Teapot.stl": {
+    "url": "https://users.cs.utah.edu/~dejohnso/models/teapot.stl",
+    "sha256": "90a309c2e96f7ad7f40162c738ec91d2b7fa9e5ad2e04ee9edf7b91e62382f62"
+  }
+}

@@ -82,6 +82,13 @@ private slots:
         for (int i=0;i<4;++i) QVERIFY(w.load_prev());
         QTRY_VERIFY_WITH_TIMEOUT(w.findChild<QLabel*>("fileInfo")->text().contains("1 triangles"),10000);
         QTRY_VERIFY_WITH_TIMEOUT(!strip->item(0)->data(Qt::UserRole).toString().isEmpty(),10000);
+        auto* viewer=w.findChild<Canvas*>("viewer");
+        viewer->set_drawMode(shaded); QTest::qWait(50);
+        QImage solid=viewer->grabFramebuffer();
+        viewer->set_drawMode(solidwireframe); QTest::qWait(50);
+        QImage edges=viewer->grabFramebuffer();
+        QVERIFY(!solid.isNull() && !edges.isNull());
+        QVERIFY(solid != edges);
         QSignalSpy closed(&w, &Window::closed);
         w.close();
         QCOMPARE(closed.count(),1);
@@ -95,6 +102,7 @@ private slots:
         for (QWidget* field : dialog->findChildren<QWidget*>()) {
             if (qobject_cast<QComboBox*>(field) || qobject_cast<QCheckBox*>(field) || qobject_cast<QAbstractSpinBox*>(field) || qobject_cast<QPushButton*>(field)) QVERIFY2(!field->toolTip().isEmpty(),qPrintable(field->metaObject()->className()));
         }
+        QCOMPARE(combos.first()->count(),int(DRAWMODECOUNT));
         combos.first()->setCurrentIndex(3); QCOMPARE(QSettings().value("drawMode").toInt(),3);
         dialog->close(); QCoreApplication::processEvents();
         Window another; QCOMPARE(QSettings().value("drawMode").toInt(),3);
@@ -138,7 +146,7 @@ private slots:
         QVERIFY(w.grab().save("/tmp/stl-browser-preview.png"));
         auto* viewer=w.findChild<Canvas*>("viewer");
         QVERIFY(viewer && viewer->isValid());
-        for(int mode=0;mode<4;++mode) {
+        for(int mode=0;mode<DRAWMODECOUNT;++mode) {
             viewer->set_drawMode(static_cast<DrawMode>(mode));
             QTest::qWait(50);
             QImage image=viewer->grabFramebuffer(); QVERIFY(!image.isNull());

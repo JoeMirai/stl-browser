@@ -123,6 +123,7 @@ void Window::buildUi() {
     previous->setShortcut(Qt::Key_Left); next->setShortcut(Qt::Key_Right);
     previous->setShortcutContext(Qt::WindowShortcut); next->setShortcutContext(Qt::WindowShortcut);
     add("Reset view", "Fit the model and return to the starting camera angle. Shortcut: Home.", [this] { canvas->common_view_change(isoview); canvas->common_view_change(centerview); })->setShortcut(Qt::Key_Home);
+    add("Angle view", "Inspect the model from an isometric angle. Shortcut: I.", [this] { canvas->common_view_change(isoview); canvas->common_view_change(centerview); })->setShortcut(Qt::Key_I);
     toolbar->addSeparator();
     add("Settings…", "Change shading, colors, lighting, camera behavior, and thumbnail size.", [this] { showSettings(); });
     auto* central = new QWidget;
@@ -313,7 +314,7 @@ void Window::trimDiskCache() {
 }
 void Window::applySettings() {
     QSettings s;
-    int mode = qBound(0, s.value("drawMode", 0).toInt(), 3);
+    int mode = qBound(0, s.value("drawMode", 0).toInt(), 4);
     for (Canvas* c : {canvas, thumbnailCanvas}) {
         c->set_drawMode(static_cast<DrawMode>(mode));
         c->setAppearance(settingColor("modelColor", "#ffffff"), settingColor("backgroundColor", "#173b46"), s.value("classicBackground", true).toBool());
@@ -353,7 +354,7 @@ void Window::showSettings() {
         auto* c = new QComboBox; c->addItems(values); c->setCurrentIndex(current); row(label, c, tip);
         connect(c, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key](int i) { QSettings().setValue(key, i); applySettings(); });
     };
-    combo("drawMode", "Shading", {"Classic fstl", "Wireframe", "Surface angle", "Custom lighting"}, QSettings().value("drawMode",0).toInt(), "Classic matches fstl. Wireframe shows edges. Surface angle colors face orientation. Custom lighting enables the light controls below.");
+    combo("drawMode", "Shading", {"Classic fstl", "Wireframe", "Surface angle", "Custom lighting", "Solid + wireframe"}, QSettings().value("drawMode",0).toInt(), "Classic matches fstl. Wireframe shows edges. Surface angle colors face orientation. Custom lighting enables the light controls below. Solid + wireframe overlays subtle triangle edges on a shaded surface.");
     auto color = [&](const char* key, const char* fallback, const QString& label, const QString& tip) {
         auto* b = new QPushButton(settingColor(key, fallback).name()); row(label, b, tip);
         connect(b, &QPushButton::clicked, dialog, [this,b,key,fallback,dialog] {
@@ -361,7 +362,7 @@ void Window::showSettings() {
             if (c.isValid()) { QSettings().setValue(key,c.name()); b->setText(c.name()); applySettings(); }
         });
     };
-    color("modelColor", "#ffffff", "Model tint", "Tint the model in Classic or Custom lighting mode. White preserves the original fstl colors. Orientation and wireframe modes use their own colors.");
+    color("modelColor", "#ffffff", "Model tint", "Tint the model in Classic, Custom lighting, or Solid + wireframe mode. White preserves the original fstl colors. Orientation and wireframe modes use their own colors.");
     color("backgroundColor", "#173b46", "Background color", "Solid viewport background color. Turn off Classic background to use this color.");
     auto check = [&](const char* key, const QString& label, bool fallback, const QString& tip) {
         auto* c = new QCheckBox; c->setChecked(QSettings().value(key,fallback).toBool()); row(label,c,tip);
